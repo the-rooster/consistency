@@ -1,0 +1,28 @@
+{
+  "//": "Snippet to merge into the project's .claude/settings.json. The two hooks below run the drift checker after the agent finishes editing files (Stop) and before any commit (PreToolUse on Bash for `git commit`). Together they prevent the agent from leaving the repo in a drifted state and from committing drift if the user runs `/auto`.",
+
+  "hooks": {
+    "Stop": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 scripts/consistency.py --root . || (echo 'consistency: drift detected — fix before continuing' >&2; exit 2)"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "if echo \"$CLAUDE_TOOL_INPUT\" | grep -q 'git commit'; then python3 scripts/consistency.py --root .; fi"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,17 @@
+[project]
+source_globs = ["src/**/*"]
+exclude_globs = ["**/__pycache__/**"]
+
+[bdd]
+framework = "behave"
+features_dir = "features"
+command = "behave"
+
+[codeql]
+enabled = true
+database_dir = ".consistency/codeql-db"
+language = "python"
+
+[checker]
+strict = false
+manifest_path = "design_docs/manifest.toml"

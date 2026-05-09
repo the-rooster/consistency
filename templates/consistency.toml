@@ -1,0 +1,56 @@
+# Project-level configuration for the consistency framework.
+# Lives at the project root. The drift checker reads this to know
+# how to run BDD, CodeQL, and other enforcement mechanisms.
+
+[project]
+# Glob patterns of paths to scan for @design annotations.
+# Typically your source tree, excluding generated files and tests.
+source_globs = ["src/**/*", "lib/**/*", "app/**/*"]
+exclude_globs = ["**/node_modules/**", "**/__pycache__/**", "**/.venv/**"]
+
+[bdd]
+# How to run the BDD suite and where scenario files live.
+# framework: one of "behave", "pytest-bdd", "cucumber-js", "godog", "specflow"
+framework = "behave"
+features_dir = "features"
+# Command run by the drift checker to verify scenarios. The checker
+# passes `--tags <bdd_tag>` to scope the run to a single constraint.
+command = "behave"
+
+[codeql]
+# CodeQL is preferred for structural/cross-cutting constraints.
+# The drift checker invokes the CodeQL CLI; install it once per dev
+# machine and CI runner.
+enabled = true
+# Path to your CodeQL database. The checker rebuilds it when source
+# changes. For a polyglot repo, use a list and the checker iterates.
+database_dir = ".consistency/codeql-db"
+language = "python"
+# Optional: extra search path for CodeQL libraries (the standard
+# library packs ship with the CLI; only set this if you depend on
+# custom packs).
+# search_path = ["vendor/codeql-packs"]
+
+[linter]
+# Map linter_rule identifiers from design docs to actual commands.
+# The drift checker runs the listed command and treats non-zero exit
+# as a constraint violation.
+# rules.example = { command = "ruff check --select MY001 ." }
+
+[pre-commit]
+# Path the consistency framework writes its hook script to. The
+# framework appends to .pre-commit-config.yaml; existing hooks are
+# preserved.
+hook_script_dir = "scripts/hooks"
+
+[claude-hooks]
+# Path the consistency framework writes Claude Code hook scripts to.
+# settings.json in .claude/ is updated to reference scripts here.
+hook_script_dir = ".claude/hooks"
+
+[checker]
+# Whether the drift checker should treat warnings as errors when run
+# from pre-commit. Useful in CI; usually false for local dev.
+strict = false
+# Where the manifest is regenerated to. Committed to the repo.
+manifest_path = "design_docs/manifest.toml"

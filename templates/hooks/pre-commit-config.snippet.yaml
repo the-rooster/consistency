@@ -1,0 +1,13 @@
+# Snippet to merge into your project's .pre-commit-config.yaml.
+# `design-init` will append this entry if a config already exists, or
+# create a fresh file with just this entry if not.
+
+repos:
+  - repo: local
+    hooks:
+      - id: consistency-drift-check
+        name: consistency drift check
+        entry: scripts/hooks/pre-commit-consistency.sh
+        language: script
+        pass_filenames: false
+        stages: [pre-commit]
