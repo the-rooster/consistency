@@ -10,12 +10,21 @@ exclude_globs = ["**/node_modules/**", "**/__pycache__/**", "**/.venv/**"]
 
 [bdd]
 # How to run the BDD suite and where scenario files live.
-# framework: one of "behave", "pytest-bdd", "cucumber-js", "godog", "specflow"
+# framework: one of "behave", "pytest-bdd", "cucumber-js", "godog",
+# "specflow", "playwright-bdd", "cypress-cucumber"
 framework = "behave"
 features_dir = "features"
-# Command run by the drift checker to verify scenarios. The checker
-# passes `--tags <bdd_tag>` to scope the run to a single constraint.
+# Command run by the drift checker to verify scenarios.
 command = "behave"
+# How the tag for a single constraint is appended to `command`.
+# Tokens: {tag} = the full tag (e.g. "@design-a--c1"),
+#         {tag_unprefixed} = the same without the leading "@".
+# Defaults below work for behave, pytest-bdd, cucumber-js, godog.
+# Examples for other frameworks:
+#   cypress-cucumber: tag_arg_format = "--env tags={tag}"
+#   jest with -t:     tag_arg_format = "-t {tag_unprefixed}"
+#   playwright-bdd:   wrap in a script — `command = "scripts/run-bdd.sh"`
+tag_arg_format = "--tags {tag}"
 
 [codeql]
 # CodeQL is preferred for structural/cross-cutting constraints.

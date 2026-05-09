@@ -1,0 +1,18 @@
+[project]
+source_globs = ["src/**/*"]
+exclude_globs = ["**/node_modules/**", "**/dist/**"]
+
+[bdd]
+framework = "cucumber-js"
+features_dir = "features"
+command = "npx cucumber-js"
+tag_arg_format = "--tags {tag}"
+
+[codeql]
+enabled = true
+database_dir = ".consistency/codeql-db"
+language = "javascript"
+
+[checker]
+strict = false
+manifest_path = "design_docs/manifest.toml"

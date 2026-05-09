@@ -267,7 +267,16 @@ def run_bdd(design: Design, c: Constraint, cfg: dict) -> tuple[str, str | None]:
     cmd = bdd_cfg.get("command")
     if not cmd:
         return ("skipped", "bdd.command not set in consistency.toml")
-    args = cmd.split() + ["--tags", c.bdd_tag] if c.bdd_tag else cmd.split()
+    # tag_arg_format lets each BDD framework express how a tag is passed
+    # on its CLI. Tokens: {tag} = the constraint's tag (e.g. "@foo--bar"),
+    # {tag_unprefixed} = the same without the leading "@". The default
+    # works for behave, pytest-bdd, cucumber-js, godog.
+    tag_format = bdd_cfg.get("tag_arg_format", "--tags {tag}")
+    args = cmd.split()
+    if c.bdd_tag:
+        tag_unprefixed = c.bdd_tag.lstrip("@")
+        rendered = tag_format.format(tag=c.bdd_tag, tag_unprefixed=tag_unprefixed)
+        args += rendered.split()
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=300)
     except FileNotFoundError:

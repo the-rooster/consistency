@@ -42,7 +42,7 @@ Supported enforcement mechanisms:
 
 | Mechanism | Meaning |
 |-----------|---------|
-| `bdd` | A Gherkin scenario (or set of scenarios) in the project's BDD framework. The drift checker requires a matching scenario tag. |
+| `bdd` | A Gherkin scenario (or set of scenarios) in the project's BDD framework. The drift checker requires a matching scenario tag and runs the framework with the configured `tag_arg_format` to scope the run. |
 | `codeql` | A CodeQL query in `design_docs/codeql/<design-id>/<constraint-id>.ql` that returns *violating* code locations. Empty result = constraint holds. |
 | `linter` | A static check (regex, AST visitor, or existing linter rule). Use for simple textual or single-file properties; for cross-cutting structural properties prefer `codeql`. |
 | `pre-commit` | A pre-commit hook that fails commits violating the property. |
