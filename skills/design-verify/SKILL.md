@@ -28,6 +28,11 @@ shipping), pass it.
 
 If a single design is in question, scope to it: `--design <id>`.
 
+If the user asks for the coverage cross-check (or you are running on
+CI), add `--with-coverage`. This re-runs the BDD suite under coverage
+instrumentation; it is slow, so do not pass it for routine pre-commit
+checks.
+
 ### 2. Triage findings
 
 The checker emits findings with codes; the most common and how to
@@ -44,6 +49,9 @@ respond:
 | `codeql-violations` | A CodeQL query reported violating locations | Either fix the violations or, with user approval, refine the query if it is overmatching. |
 | `codeql-error` | The CodeQL CLI failed | Likely the CLI is missing or the database is stale. Rebuild the database. |
 | `bdd-failing` | A BDD scenario for an implemented constraint is red | Fix the implementation or, if the scenario is wrong, discuss with the user. |
+| `annotation-uncovered` | Annotation's range has no line executed by the constraint's scenarios | Either the annotation is on code that no scenario reaches (refactor remnant, dead code) or the scenarios are too narrow. Move or remove the annotation, or extend the scenarios — with user approval if the latter. |
+| `covered-unannotated` | A file is heavily covered by a design's scenarios but has no `@design` for that design | Suggest, don't enforce. Ask whether the file genuinely implements the design (then add an annotation) or is incidental (leave it). |
+| `coverage-error` | The coverage cross-check could not run | Likely the configured `[bdd.coverage].command` is wrong, or the report didn't land at `report_path`. Surface the underlying error and ask the user to fix the config. |
 | `no-enforcement` | A constraint has no enforcement mechanism | Reject — every constraint must bind to at least one mechanism. |
 | `bad-status` / `missing-field` / `invalid-toml` | The design doc is malformed | Fix the frontmatter. |
 

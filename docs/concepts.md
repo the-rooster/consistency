@@ -123,3 +123,31 @@ no effect.
 
 The drift checker reports drift; the pre-commit hook blocks commits
 that introduce it.
+
+## Coverage cross-check (optional)
+
+When a `bdd` constraint runs under coverage instrumentation, the
+drift checker can verify that each `@design` annotation actually
+*sits in code that the matching scenarios exercise*. This catches a
+real failure mode of annotation-based linking: an annotation whose
+function or block has been refactored away to a sibling file, or
+that lies outright.
+
+Two findings come out of the cross-check:
+
+- **`annotation-uncovered`** — an annotation `@design: X#c` whose
+  *ownership range* (from the annotation's line to the next
+  annotation in the same file, or EOF) contains no line that was
+  executed by scenarios tagged for constraint `c`. Either the
+  annotation lies, the scenario is too narrow, or the code is dead.
+- **`covered-unannotated`** — a file whose statements are heavily
+  covered (over `heavy_coverage_threshold`) by a design's scenarios
+  but that has no `@design` annotation for that design. Surfaced as
+  a *suggestion* — the human decides whether the coverage is intent
+  or incidental.
+
+Both findings are warnings, not errors, because both can have
+legitimate explanations. The cross-check is opt-in
+(`--with-coverage` on the checker, off by default) because running
+the BDD suite under coverage is heavy. Wire it into CI; keep
+pre-commit fast.

@@ -26,6 +26,35 @@ command = "behave"
 #   playwright-bdd:   wrap in a script — `command = "scripts/run-bdd.sh"`
 tag_arg_format = "--tags {tag}"
 
+[bdd.coverage]
+# Optional cross-check: run BDD scenarios with coverage instrumentation
+# scoped to one constraint's tag, then verify (a) every annotation for
+# that constraint sits in code the scenarios actually exercise, and
+# (b) heavily-covered files that have no annotation get flagged as
+# candidates.
+#
+# This check is heavy (re-runs the BDD suite under coverage), so it is
+# off by default and only runs when the checker is invoked with
+# --with-coverage. Wire it into CI, not pre-commit.
+enabled = false
+# Command template. Tokens:
+#   {bdd_command}, {tag_args}, {report_path}
+# The command must produce a coverage report at report_path.
+# Python (coverage.py):
+#   command = "coverage run -m {bdd_command} {tag_args} && coverage json -o {report_path}"
+# JS/TS (c8):
+#   command = "c8 --reporter=json --report-dir=.consistency/cov-tmp {bdd_command} {tag_args} && cp .consistency/cov-tmp/coverage-final.json {report_path}"
+command = "coverage run -m {bdd_command} {tag_args} && coverage json -o {report_path}"
+# Where the coverage report ends up. Re-used per-constraint.
+report_path = ".consistency/coverage.json"
+# Format of the report at report_path.
+# One of: "coverage.py" | "istanbul"
+format = "coverage.py"
+# A file with this fraction of its statements covered by a design's
+# scenarios — but with no @design annotation — is flagged as a
+# covered-unannotated candidate.
+heavy_coverage_threshold = 0.5
+
 [codeql]
 # CodeQL is preferred for structural/cross-cutting constraints.
 # The drift checker invokes the CodeQL CLI; install it once per dev

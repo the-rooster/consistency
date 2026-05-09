@@ -106,6 +106,16 @@ When you believe the design is done:
    `implemented` status triggers stricter checks (e.g. "implemented
    designs must have annotations"), so this final run proves the
    tighter contract.
+6. If the project has `[bdd.coverage]` enabled, also run the coverage
+   cross-check: `python3 scripts/consistency.py --root . --with-coverage`.
+   Triage `annotation-uncovered` warnings — they typically mean
+   either an annotation is on dead code, or the BDD scenarios you
+   scaffolded are too narrow to exercise the annotated site. The
+   first is your problem to fix here; the second may need a
+   conversation with the user before extending scenarios. Triage
+   `covered-unannotated` warnings as suggestions — add an annotation
+   if the file genuinely implements the design; otherwise leave it
+   (incidental coverage is fine and is not drift).
 
 ### 7. Report
 

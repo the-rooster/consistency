@@ -10,6 +10,7 @@ Usage:
     consistency.py --design <id>    # scope to one design
     consistency.py --manifest-only  # skip enforcement, regenerate manifest only
     consistency.py --strict         # warnings become errors
+    consistency.py --with-coverage  # also run the BDD coverage cross-check
 """
 
 from __future__ import annotations
@@ -271,12 +272,7 @@ def run_bdd(design: Design, c: Constraint, cfg: dict) -> tuple[str, str | None]:
     # on its CLI. Tokens: {tag} = the constraint's tag (e.g. "@foo--bar"),
     # {tag_unprefixed} = the same without the leading "@". The default
     # works for behave, pytest-bdd, cucumber-js, godog.
-    tag_format = bdd_cfg.get("tag_arg_format", "--tags {tag}")
-    args = cmd.split()
-    if c.bdd_tag:
-        tag_unprefixed = c.bdd_tag.lstrip("@")
-        rendered = tag_format.format(tag=c.bdd_tag, tag_unprefixed=tag_unprefixed)
-        args += rendered.split()
+    args = cmd.split() + _render_tag_args(c, bdd_cfg)
     try:
         proc = subprocess.run(args, capture_output=True, text=True, timeout=300)
     except FileNotFoundError:
@@ -284,6 +280,168 @@ def run_bdd(design: Design, c: Constraint, cfg: dict) -> tuple[str, str | None]:
     except subprocess.TimeoutExpired:
         return ("error", f"bdd command timed out: {cmd}")
     return (("passing" if proc.returncode == 0 else "failing"), None)
+
+
+def _render_tag_args(c: Constraint, bdd_cfg: dict) -> list[str]:
+    if not c.bdd_tag:
+        return []
+    fmt = bdd_cfg.get("tag_arg_format", "--tags {tag}")
+    rendered = fmt.format(tag=c.bdd_tag, tag_unprefixed=c.bdd_tag.lstrip("@"))
+    return rendered.split()
+
+
+# ---------- coverage cross-check --------------------------------------------
+
+
+def run_bdd_with_coverage(c: Constraint, cfg: dict, root: Path) -> tuple[dict[str, set[int]] | None, dict[str, float], str | None]:
+    """Run the BDD command for one constraint under coverage.
+
+    Returns (covered_lines_by_file, coverage_fraction_by_file, error).
+    Files are keyed by repo-relative POSIX path. covered_lines_by_file
+    maps file → set of executed source lines. coverage_fraction_by_file
+    maps file → 0.0..1.0 of statements executed in that file by the
+    scoped run.
+    """
+    bdd_cfg = cfg.get("bdd", {})
+    cov_cfg = bdd_cfg.get("coverage", {})
+    if not cov_cfg.get("enabled", False):
+        return (None, {}, "coverage not enabled in consistency.toml")
+    bdd_command = bdd_cfg.get("command")
+    if not bdd_command:
+        return (None, {}, "bdd.command not set")
+    template = cov_cfg.get("command", "coverage run -m {bdd_command} {tag_args} && coverage json -o {report_path}")
+    report_path = Path(cov_cfg.get("report_path", ".consistency/coverage.json"))
+    abs_report = (root / report_path).resolve()
+    abs_report.parent.mkdir(parents=True, exist_ok=True)
+    if abs_report.exists():
+        abs_report.unlink()
+    tag_args = " ".join(_render_tag_args(c, bdd_cfg))
+    rendered = template.format(
+        bdd_command=bdd_command, tag_args=tag_args, report_path=str(abs_report),
+    )
+    try:
+        # Coverage commands typically need a shell because of the && and the
+        # bdd_command itself may include flags. Running through the system
+        # shell is acceptable here — the command originates from the
+        # project's own consistency.toml, not user input.
+        subprocess.run(rendered, shell=True, cwd=root, timeout=900, capture_output=True, text=True)
+    except subprocess.TimeoutExpired:
+        return (None, {}, f"coverage command timed out: {rendered}")
+    if not abs_report.exists():
+        return (None, {}, f"coverage report not produced at {abs_report}")
+    fmt = cov_cfg.get("format", "coverage.py")
+    try:
+        if fmt == "coverage.py":
+            covered, fractions = _parse_coverage_py(abs_report, root)
+        elif fmt == "istanbul":
+            covered, fractions = _parse_istanbul(abs_report, root)
+        else:
+            return (None, {}, f"unknown coverage format: {fmt}")
+    except (json.JSONDecodeError, KeyError, ValueError) as e:
+        return (None, {}, f"failed to parse {abs_report}: {e}")
+    return (covered, fractions, None)
+
+
+def _parse_coverage_py(report: Path, root: Path) -> tuple[dict[str, set[int]], dict[str, float]]:
+    data = json.loads(report.read_text(encoding="utf-8"))
+    covered: dict[str, set[int]] = {}
+    fractions: dict[str, float] = {}
+    for filename, payload in (data.get("files") or {}).items():
+        rel = _rel_to(filename, root)
+        covered[rel] = set(payload.get("executed_lines", []))
+        summary = payload.get("summary", {})
+        n_total = summary.get("num_statements", 0) or 0
+        n_covered = summary.get("covered_lines", 0) or 0
+        fractions[rel] = (n_covered / n_total) if n_total else 0.0
+    return covered, fractions
+
+
+def _parse_istanbul(report: Path, root: Path) -> tuple[dict[str, set[int]], dict[str, float]]:
+    data = json.loads(report.read_text(encoding="utf-8"))
+    covered: dict[str, set[int]] = {}
+    fractions: dict[str, float] = {}
+    for filename, payload in data.items():
+        rel = _rel_to(filename, root)
+        statement_map = payload.get("statementMap", {})
+        statements = payload.get("s", {})
+        executed_lines: set[int] = set()
+        n_total = 0
+        n_covered = 0
+        for stmt_id, hits in statements.items():
+            n_total += 1
+            loc = statement_map.get(stmt_id, {}).get("start", {})
+            line = loc.get("line")
+            if hits and line is not None:
+                executed_lines.add(line)
+                n_covered += 1
+        covered[rel] = executed_lines
+        fractions[rel] = (n_covered / n_total) if n_total else 0.0
+    return covered, fractions
+
+
+def _rel_to(filename: str, root: Path) -> str:
+    p = Path(filename)
+    try:
+        return p.resolve().relative_to(root.resolve()).as_posix()
+    except (ValueError, OSError):
+        return p.as_posix()
+
+
+def cross_check_coverage(
+    d: Design, c: Constraint, anns_for_constraint: list[Annotation],
+    all_anns_for_design: list[Annotation],
+    covered: dict[str, set[int]], fractions: dict[str, float],
+    cfg: dict, root: Path,
+) -> list[Finding]:
+    """Compare annotations to coverage. Two findings:
+       - annotation-uncovered: an annotation's ownership range is not exercised
+       - covered-unannotated: a heavily-covered file has no annotation for this design
+    """
+    findings: list[Finding] = []
+
+    # annotation-uncovered: per annotation, compute its ownership range
+    # in the file (this annotation's line up to the next annotation in
+    # the same file, or EOF), then check whether any line in that range
+    # was executed.
+    by_file: dict[Path, list[Annotation]] = {}
+    for a in all_anns_for_design:
+        by_file.setdefault(a.file, []).append(a)
+    for f, alist in by_file.items():
+        alist.sort(key=lambda a: a.line)
+    for a in anns_for_constraint:
+        rel = _rel(a.file, root)
+        ranges_in_file = sorted({x.line for x in by_file.get(a.file, [])})
+        try:
+            idx = ranges_in_file.index(a.line)
+            next_line = ranges_in_file[idx + 1] if idx + 1 < len(ranges_in_file) else None
+        except ValueError:
+            next_line = None
+        upper = next_line if next_line is not None else 10**9
+        executed = covered.get(rel, set())
+        owned_executed = {ln for ln in executed if a.line <= ln < upper}
+        if not owned_executed:
+            findings.append(Finding(
+                "warning", "annotation-uncovered",
+                f"{rel}:{a.line}: @design {d.id}#{c.id} but no line in this annotation's range was executed by scenarios tagged {c.bdd_tag}",
+                f"{rel}:{a.line}",
+            ))
+
+    # covered-unannotated: files heavily covered by this constraint's
+    # scenarios that have no @design annotation for this design.
+    threshold = float(cfg.get("bdd", {}).get("coverage", {}).get("heavy_coverage_threshold", 0.5))
+    files_with_design_annotation = {_rel(a.file, root) for a in all_anns_for_design}
+    for rel, frac in fractions.items():
+        if frac < threshold:
+            continue
+        if rel in files_with_design_annotation:
+            continue
+        findings.append(Finding(
+            "warning", "covered-unannotated",
+            f"{rel}: {frac:.0%} of statements covered by scenarios for {d.id}#{c.id} but no @design annotation present",
+            rel,
+        ))
+
+    return findings
 
 
 # ---------- main check -------------------------------------------------------
@@ -315,7 +473,7 @@ def collect_designs(root: Path) -> tuple[list[Design], list[Finding]]:
     return designs, findings
 
 
-def check(root: Path, only_design: str | None, manifest_only: bool, strict: bool) -> int:
+def check(root: Path, only_design: str | None, manifest_only: bool, strict: bool, with_coverage: bool = False) -> int:
     cfg = load_config(root)
     designs, findings = collect_designs(root)
 
@@ -430,6 +588,20 @@ def check(root: Path, only_design: str | None, manifest_only: bool, strict: bool
                             str(d.file),
                         ))
 
+                if with_coverage and "bdd" in c.enforcement and d.status == "implemented":
+                    covered, fractions, cov_err = run_bdd_with_coverage(c, cfg, root)
+                    if cov_err:
+                        findings.append(Finding(
+                            "warning", "coverage-error",
+                            f"{d.id}#{c.id}: coverage cross-check skipped: {cov_err}",
+                            str(d.file),
+                        ))
+                    elif covered is not None:
+                        ann_for_c = [a for a in ann if a.constraint_id == c.id]
+                        findings.extend(cross_check_coverage(
+                            d, c, ann_for_c, ann, covered, fractions, cfg, root,
+                        ))
+
     # Manifest regeneration.
     manifest_path = Path(cfg.get("checker", {}).get("manifest_path", "design_docs/manifest.toml"))
     write_manifest(root / manifest_path, designs, annotations_by_design, root)
@@ -507,9 +679,14 @@ def main(argv: list[str]) -> int:
     p.add_argument("--strict", action="store_true",
                    help="Treat warnings as errors")
     p.add_argument("--root", default=".", help="Project root (default: cwd)")
+    p.add_argument("--with-coverage", action="store_true",
+                   help="Also run the BDD coverage cross-check (heavy; CI use)")
     p.add_argument("--version", action="version", version=VERSION)
     args = p.parse_args(argv)
-    return check(Path(args.root).resolve(), args.design, args.manifest_only, args.strict)
+    return check(
+        Path(args.root).resolve(), args.design, args.manifest_only,
+        args.strict, args.with_coverage,
+    )
 
 
 if __name__ == "__main__":
