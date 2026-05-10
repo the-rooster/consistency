@@ -8,15 +8,17 @@ updated = 2026-01-01
 tags = []
 
 # Repeat one [[constraint]] block per machine-checkable property.
-# Pick enforcement values from: bdd, codeql, linter, pre-commit, claude-hook, manual.
-# Prefer codeql over linter for structural / cross-cutting properties.
+# Pick enforcement values from: bdd, semgrep, codeql, linter, pre-commit, claude-hook, manual.
+# For structural properties, prefer semgrep over linter; reach for codeql only
+# when you need real dataflow / taint analysis.
 
 [[constraint]]
 id = "REPLACE-ME-constraint-id"
 description = "REPLACE ME — single declarative sentence stating what must hold."
-enforcement = ["codeql", "bdd"]
+enforcement = ["semgrep", "bdd"]
 # Optional, defaults shown:
 # bdd_tag = "@<design-id>--<constraint-id>"
+# semgrep_rule = "design_docs/semgrep/<design-id>/<constraint-id>.yml"
 # codeql_query = "design_docs/codeql/<design-id>/<constraint-id>.ql"
 # severity = "error"
 +++

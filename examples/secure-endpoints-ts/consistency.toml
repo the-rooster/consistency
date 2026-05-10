@@ -8,6 +8,9 @@ features_dir = "features"
 command = "npx cucumber-js"
 tag_arg_format = "--tags {tag}"
 
+[semgrep]
+enabled = true
+
 [codeql]
 enabled = true
 database_dir = ".consistency/codeql-db"

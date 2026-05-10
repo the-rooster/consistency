@@ -43,8 +43,9 @@ Supported enforcement mechanisms:
 | Mechanism | Meaning |
 |-----------|---------|
 | `bdd` | A Gherkin scenario (or set of scenarios) in the project's BDD framework. The drift checker requires a matching scenario tag and runs the framework with the configured `tag_arg_format` to scope the run. |
-| `codeql` | A CodeQL query in `design_docs/codeql/<design-id>/<constraint-id>.ql` that returns *violating* code locations. Empty result = constraint holds. |
-| `linter` | A static check (regex, AST visitor, or existing linter rule). Use for simple textual or single-file properties; for cross-cutting structural properties prefer `codeql`. |
+| `semgrep` | A Semgrep rule in `design_docs/semgrep/<design-id>/<constraint-id>.yml` whose results identify violating code locations. Lightweight AST pattern matching across many languages. |
+| `codeql` | A CodeQL query in `design_docs/codeql/<design-id>/<constraint-id>.ql` returning violating locations. Use when you need dataflow or taint analysis. |
+| `linter` | A textual or existing-linter check (regex, eslint rule, ruff rule). Use for simple single-file textual properties only. |
 | `pre-commit` | A pre-commit hook that fails commits violating the property. |
 | `claude-hook` | A Claude Code `PreToolUse` or `PostToolUse` hook that prevents the agent from making a change that would violate the property. |
 | `manual` | Explicit escape hatch. The constraint is enforced by review only. Drift checker emits a warning, not an error. |
@@ -52,30 +53,37 @@ Supported enforcement mechanisms:
 A constraint with no enforcement is rejected by the drift checker —
 the framework's whole point is that every constraint binds to a check.
 
-### Preferring CodeQL for structural properties
+### Choosing among `linter`, `semgrep`, and `codeql`
 
-The framework actively prefers `codeql` over `linter` whenever the
-property is *structural* — i.e., describes a relationship between code
-elements rather than a single textual pattern. Examples that should
-use CodeQL:
+The three static-enforcement options form a capability ladder.
+Use the cheapest tool that can express the property.
 
-- "Every HTTP route handler is wrapped in auth middleware"
-- "Every external network call lives inside a retry helper"
-- "No SQL string is built from user input without going through the
-  parameterized-query helper"
-- "Every `Result.unwrap` is guarded by a prior `is_ok` check or sits
-  in a test file"
+| Property shape | Enforcement |
+|---|---|
+| Filenames, imports, single-line textual rules | `linter` |
+| AST patterns: "every X function is decorated with Y", "every X call passes Y as arg N", "no constructor in this directory uses pattern Z" | `semgrep` |
+| Dataflow / taint / cross-procedural: "user input never reaches a raw SQL exec without `parameterize`", "every secret read flows through `redact` before any log call" | `codeql` |
 
-Examples that are fine as `linter`:
+**Semgrep** is the recommended default for structural enforcement.
+Its rules are short YAML, multi-language out of the box, and the CLI
+installs via `pip install semgrep` with no database build step.
+A typical rule fits in a screen.
 
-- "Filenames in `migrations/` match `^\d{4}_.*\.sql$`"
-- "No file imports the deprecated `legacy_utils` module"
+**CodeQL** is reserved for properties that genuinely need dataflow
+or taint analysis. Its queries are more expressive but longer and
+harder to write; the database build step adds friction. Reach for
+it only when Semgrep cannot express the property — typically when
+the predicate involves "value flows from X to Y" rather than
+"this AST shape exists."
 
-Why the preference: CodeQL queries are explicit dataflow / structural
-predicates, so they generalize across the codebase. Regex linters
-tend to either over- or under-match as the codebase evolves, and the
-agent has to keep tweaking them. A CodeQL query, once written, keeps
-holding as long as the structural property is true.
+**Linter** is for genuinely textual rules where AST awareness adds
+nothing — filename checks, import bans, simple regexes against
+known files.
+
+Why the bias against ad-hoc regex `linter` rules for structural
+properties: they over- or under-match as the codebase evolves and
+the agent has to keep tweaking them. Semgrep and CodeQL hold as
+long as the structure does.
 
 ## Annotation
 

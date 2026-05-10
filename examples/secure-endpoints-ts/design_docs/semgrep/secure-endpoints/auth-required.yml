@@ -1,0 +1,39 @@
+# @design secure-endpoints#auth-required
+# See design_docs/secure-endpoints.md for context.
+#
+# Selects Express route registrations whose argument list does not
+# contain `requireAuth`. Empty results = constraint holds for every
+# route in the codebase.
+#
+# Approach: match `$APP.<method>($PATH, ...)` for any router-shaped
+# receiver, then subtract matches that include `requireAuth` in
+# the argument list.
+#
+# Comparison with the CodeQL query: the Semgrep rule is
+# pattern-based and ~25 lines; the CodeQL query expresses the same
+# property using imports and predicates and is ~30 lines including
+# imports. For this property, Semgrep is sufficient. The CodeQL
+# version is included in the example to demonstrate both options.
+
+rules:
+  - id: secure-endpoints-auth-required
+    languages: [javascript, typescript]
+    severity: ERROR
+    message: |
+      Express route registration is missing the requireAuth middleware.
+      All HTTP endpoints must require authenticated callers — see
+      design_docs/secure-endpoints.md.
+    patterns:
+      - pattern-either:
+          - pattern: $APP.get($PATH, ...)
+          - pattern: $APP.post($PATH, ...)
+          - pattern: $APP.put($PATH, ...)
+          - pattern: $APP.patch($PATH, ...)
+          - pattern: $APP.delete($PATH, ...)
+          - pattern: $APP.all($PATH, ...)
+      - pattern-not: $APP.get($PATH, ..., requireAuth, ...)
+      - pattern-not: $APP.post($PATH, ..., requireAuth, ...)
+      - pattern-not: $APP.put($PATH, ..., requireAuth, ...)
+      - pattern-not: $APP.patch($PATH, ..., requireAuth, ...)
+      - pattern-not: $APP.delete($PATH, ..., requireAuth, ...)
+      - pattern-not: $APP.all($PATH, ..., requireAuth, ...)

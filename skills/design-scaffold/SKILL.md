@@ -1,6 +1,6 @@
 ---
 name: design-scaffold
-description: Generate the BDD scenarios, CodeQL queries, linter rules, pre-commit hooks, and Claude Code hooks declared by an approved design's constraints. Use after the user approves a design (status=approved) and before any feature implementation work. Strongly prefers CodeQL for structural / cross-cutting properties.
+description: Generate the BDD scenarios, Semgrep rules, CodeQL queries, linter rules, pre-commit hooks, and Claude Code hooks declared by an approved design's constraints. Use after the user approves a design (status=approved) and before any feature implementation work. Defaults to Semgrep for structural properties; reserves CodeQL for predicates that need dataflow or taint analysis.
 ---
 
 # design-scaffold
@@ -53,10 +53,46 @@ constraints from one design stay together.
 Scenarios fail (red) at this point — that is correct. They will go
 green during `design-implement`.
 
+#### `semgrep`
+
+The framework's preferred enforcement for AST-pattern structural
+properties — most "every X is wrapped/decorated/passes Y"
+properties belong here, not in CodeQL.
+
+1. Write a Semgrep YAML rule whose `pattern` (or `patterns:` block)
+   matches *violating* code, not compliant code. Empty result =
+   property holds.
+2. Use `pattern-not` to subtract the compliant cases. Typical shape:
+   `pattern: <broad match>` then `pattern-not: <broad match where Y
+   is also present>`.
+3. Set `languages:` based on the project. Semgrep auto-detects most
+   files but the rule needs to declare which languages it applies to.
+4. Set `severity: ERROR` and a `message` that explains the
+   constraint (the agent that violates the rule reads this; make it
+   instructive).
+5. Write the rule to
+   `design_docs/semgrep/<design-id>/<constraint-id>.yml`.
+6. Run `semgrep scan --config <rule-path> --error <source-globs>`
+   once. It should currently report violations (no implementation
+   yet) or zero violations (property happens to hold). Both are
+   acceptable starting states.
+7. Add a comment at the top of the rule pointing back at the design:
+
+   ```yaml
+   # @design <design-id>#<constraint-id>
+   # See design_docs/<design-id>.md for context.
+   ```
+
+Reach for `codeql` instead of `semgrep` only if the property
+genuinely needs taint flow or cross-procedural dataflow. If you
+catch yourself writing a chain of `pattern-inside` / `pattern-not`
+that approximates dataflow, that is the cue to switch to CodeQL.
+
 #### `codeql`
 
-This is the framework's preferred enforcement for structural
-properties. Take time to write a *good* query.
+The framework's preferred enforcement for *dataflow* properties.
+For pure AST patterns prefer `semgrep`. Take time to write a *good*
+query.
 
 1. Determine the database language from `consistency.toml`'s
    `[codeql]` block. If polyglot, write one query per language.

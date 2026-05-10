@@ -55,10 +55,22 @@ format = "coverage.py"
 # covered-unannotated candidate.
 heavy_coverage_threshold = 0.5
 
+[semgrep]
+# Semgrep is the preferred static enforcement for AST-pattern
+# properties — easier and faster to run than CodeQL, multi-language
+# without a database build step. Install via `pip install semgrep` or
+# from https://semgrep.dev.
+enabled = true
+# Optional: directories the checker passes to `semgrep scan`. If
+# omitted, falls back to project.source_globs.
+# targets = ["src", "lib"]
+
 [codeql]
-# CodeQL is preferred for structural/cross-cutting constraints.
-# The drift checker invokes the CodeQL CLI; install it once per dev
-# machine and CI runner.
+# CodeQL is the preferred static enforcement when the property needs
+# real dataflow / taint analysis (e.g. "user input never reaches a
+# raw SQL exec without going through parameterize"). For pure AST
+# pattern matching, prefer Semgrep — its rules are dramatically
+# easier to write and review.
 enabled = true
 # Path to your CodeQL database. The checker rebuilds it when source
 # changes. For a polyglot repo, use a list and the checker iterates.

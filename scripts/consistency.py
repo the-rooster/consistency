@@ -53,6 +53,7 @@ class Constraint:
     enforcement: list[str]
     bdd_tag: str | None = None
     codeql_query: str | None = None
+    semgrep_rule: str | None = None
     linter_rule: str | None = None
     hook_id: str | None = None
     severity: str = "error"
@@ -92,7 +93,7 @@ class Finding:
 
 
 VALID_STATUSES = {"draft", "approved", "scaffolded", "implemented", "deprecated"}
-VALID_ENFORCEMENT = {"bdd", "codeql", "linter", "pre-commit", "claude-hook", "manual"}
+VALID_ENFORCEMENT = {"bdd", "codeql", "semgrep", "linter", "pre-commit", "claude-hook", "manual"}
 
 
 def parse_design_doc(path: Path) -> tuple[Design | None, list[Finding]]:
@@ -170,6 +171,7 @@ def parse_design_doc(path: Path) -> tuple[Design | None, list[Finding]]:
             enforcement=list(raw["enforcement"]),
             bdd_tag=raw.get("bdd_tag"),
             codeql_query=raw.get("codeql_query"),
+            semgrep_rule=raw.get("semgrep_rule"),
             linter_rule=raw.get("linter_rule"),
             hook_id=raw.get("hook_id"),
             severity=raw.get("severity", "error"),
@@ -178,6 +180,8 @@ def parse_design_doc(path: Path) -> tuple[Design | None, list[Finding]]:
             c.bdd_tag = f"@{data['id']}--{c.id}"
         if "codeql" in c.enforcement and not c.codeql_query:
             c.codeql_query = f"design_docs/codeql/{data['id']}/{c.id}.ql"
+        if "semgrep" in c.enforcement and not c.semgrep_rule:
+            c.semgrep_rule = f"design_docs/semgrep/{data['id']}/{c.id}.yml"
         constraints.append(c)
 
     design = Design(
@@ -234,7 +238,7 @@ def scan_annotations(roots: list[Path], excludes: list[re.Pattern]) -> list[Anno
 # ---------- enforcement runners ---------------------------------------------
 
 
-def run_codeql(design: Design, c: Constraint, cfg: dict) -> tuple[str, int, str | None]:
+def run_codeql(design: Design, c: Constraint, cfg: dict, root: Path) -> tuple[str, int, str | None]:
     """Returns (status, violation_count, error_message)."""
     codeql_cfg = cfg.get("codeql", {})
     if not codeql_cfg.get("enabled", False):
@@ -242,12 +246,13 @@ def run_codeql(design: Design, c: Constraint, cfg: dict) -> tuple[str, int, str 
     db = codeql_cfg.get("database_dir")
     if not db:
         return ("error", 0, "codeql.database_dir not set")
-    query_path = Path(c.codeql_query)
+    query_path = root / Path(c.codeql_query)
     if not query_path.exists():
-        return ("error", 0, f"codeql query file not found: {query_path}")
+        return ("error", 0, f"codeql query file not found: {c.codeql_query}")
+    db_path = root / Path(db)
     try:
         proc = subprocess.run(
-            ["codeql", "query", "run", "--database", db, str(query_path), "--output", "-"],
+            ["codeql", "query", "run", "--database", str(db_path), str(query_path), "--output", "-"],
             capture_output=True, text=True, timeout=120,
         )
     except FileNotFoundError:
@@ -261,6 +266,44 @@ def run_codeql(design: Design, c: Constraint, cfg: dict) -> tuple[str, int, str 
     # this once a richer output format (e.g. SARIF) is wired up.
     rows = [r for r in proc.stdout.splitlines() if r.strip() and not r.startswith("|")]
     return ("violations" if rows else "no-violations", len(rows), None)
+
+
+def run_semgrep(design: Design, c: Constraint, cfg: dict, root: Path) -> tuple[str, int, str | None]:
+    """Returns (status, violation_count, error_message)."""
+    sg_cfg = cfg.get("semgrep", {})
+    if not sg_cfg.get("enabled", True):
+        return ("skipped", 0, "semgrep not enabled in consistency.toml")
+    rule_path = root / Path(c.semgrep_rule)
+    if not rule_path.exists():
+        return ("error", 0, f"semgrep rule file not found: {c.semgrep_rule}")
+    proj = cfg.get("project", {})
+    targets = sg_cfg.get("targets") or proj.get("source_globs", ["src"])
+    # semgrep accepts directory roots; strip the /** suffix off globs.
+    target_dirs = [str((root / g.split("/**")[0]).resolve()) for g in targets]
+    cmd = ["semgrep", "scan", "--config", str(rule_path), "--error", "--quiet", "--json", *target_dirs]
+    try:
+        # encoding="utf-8", errors="replace" because semgrep's progress output
+        # contains box-drawing / emoji characters that crash Windows' default
+        # cp1252 codec mid-read.
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=300,
+            encoding="utf-8", errors="replace",
+        )
+    except FileNotFoundError:
+        return ("error", 0, "semgrep CLI not on PATH; install via `pip install semgrep` or https://semgrep.dev")
+    except subprocess.TimeoutExpired:
+        return ("error", 0, f"semgrep timed out: {rule_path}")
+    # semgrep exits 0 for no findings, 1 for findings (with --error), or
+    # 2+ for setup/parse errors.
+    if proc.returncode >= 2:
+        return ("error", 0, f"semgrep exit {proc.returncode}: {((proc.stderr or proc.stdout) or '').strip()[:400]}")
+    stdout = proc.stdout or ""
+    try:
+        data = json.loads(stdout) if stdout.strip() else {"results": []}
+    except json.JSONDecodeError as e:
+        return ("error", 0, f"semgrep produced unparseable JSON: {e}")
+    n = len(data.get("results", []))
+    return ("violations" if n else "no-violations", n, None)
 
 
 def run_bdd(design: Design, c: Constraint, cfg: dict) -> tuple[str, str | None]:
@@ -567,13 +610,24 @@ def check(root: Path, only_design: str | None, manifest_only: bool, strict: bool
                         ))
 
                 if "codeql" in c.enforcement:
-                    status, n, err = run_codeql(d, c, cfg)
+                    status, n, err = run_codeql(d, c, cfg, root)
                     if err:
                         findings.append(Finding(c.severity, "codeql-error", f"{d.id}#{c.id}: {err}", str(d.file)))
                     elif status == "violations":
                         findings.append(Finding(
                             c.severity, "codeql-violations",
                             f"{d.id}#{c.id}: codeql query reported {n} violation(s)",
+                            str(d.file),
+                        ))
+
+                if "semgrep" in c.enforcement:
+                    status, n, err = run_semgrep(d, c, cfg, root)
+                    if err:
+                        findings.append(Finding(c.severity, "semgrep-error", f"{d.id}#{c.id}: {err}", str(d.file)))
+                    elif status == "violations":
+                        findings.append(Finding(
+                            c.severity, "semgrep-violations",
+                            f"{d.id}#{c.id}: semgrep rule reported {n} violation(s)",
                             str(d.file),
                         ))
 
@@ -645,6 +699,8 @@ def write_manifest(out: Path, designs: list[Design], anns: dict[str, list[Annota
                 lines.append(f'  bdd_tag = "{c.bdd_tag}"')
             if c.codeql_query:
                 lines.append(f'  codeql_query = "{c.codeql_query}"')
+            if c.semgrep_rule:
+                lines.append(f'  semgrep_rule = "{c.semgrep_rule}"')
             if ca:
                 lines.append("  annotations = [")
                 for a in ca:

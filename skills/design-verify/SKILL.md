@@ -46,6 +46,8 @@ respond:
 | `deprecated-with-annotations` | Code still references a deprecated design | Migrate the code to the superseding design and update annotations. |
 | `premature-annotations` | Code references a design that is not yet `implemented` | Usually a slip — annotations got added during scaffolding. Either remove them or, if implementation actually happened, advance the design's status. |
 | `ambiguous-annotation` | Multi-constraint design referenced without a constraint id | Add `#<constraint-id>` to the annotation. |
+| `semgrep-violations` | A Semgrep rule reported matching (violating) locations | Either fix the code or, with user approval, refine the rule if it is overmatching. |
+| `semgrep-error` | The Semgrep CLI failed or the rule could not be parsed | Likely the CLI is missing (`pip install semgrep`) or the YAML is malformed. Surface the underlying error. |
 | `codeql-violations` | A CodeQL query reported violating locations | Either fix the violations or, with user approval, refine the query if it is overmatching. |
 | `codeql-error` | The CodeQL CLI failed | Likely the CLI is missing or the database is stale. Rebuild the database. |
 | `bdd-failing` | A BDD scenario for an implemented constraint is red | Fix the implementation or, if the scenario is wrong, discuss with the user. |

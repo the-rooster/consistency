@@ -9,9 +9,12 @@ the bits that *do* vary by language:
 - `[bdd].command = "npx cucumber-js"`
 - `[bdd].tag_arg_format = "--tags {tag}"` (cucumber-js convention,
   same as the default)
-- The CodeQL query is written against the JS extractor — selecting
-  `app.<method>(...)` calls whose argument list does not reference
-  `requireAuth`.
+- The constraint declares both `semgrep` and `codeql` enforcement to
+  illustrate the two options side-by-side. The Semgrep rule is
+  ~25 lines of YAML; the CodeQL query is ~30 lines using the
+  `python` import. For this property either is sufficient — Semgrep
+  is the recommended default per the framework rubric, and CodeQL
+  is shown for comparison.
 
 ## Project layout
 

@@ -10,7 +10,7 @@ tags = ["security", "http"]
 [[constraint]]
 id = "auth-required"
 description = "Every Express route registration includes the `requireAuth` middleware in its argument list."
-enforcement = ["codeql", "bdd"]
+enforcement = ["semgrep", "codeql", "bdd"]
 +++
 
 ## Background

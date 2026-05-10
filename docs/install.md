@@ -49,6 +49,7 @@ templates and the skill files accordingly.
 | Tool | When | Install |
 |------|------|---------|
 | Python 3.11+ | always — the drift checker | https://python.org |
+| Semgrep CLI | for `semgrep` enforcement | `pip install semgrep` |
 | CodeQL CLI | for `codeql` enforcement | https://github.com/github/codeql-cli-binaries |
 | Your BDD framework | for `bdd` enforcement | per-language (e.g. `pip install behave`) |
 | pre-commit | for the pre-commit hook | `pip install pre-commit` (optional but recommended) |

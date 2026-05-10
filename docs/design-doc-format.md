@@ -64,8 +64,9 @@ What this design intentionally does *not* cover.
 |-------|------|----------|-------|
 | `id` | string | yes | kebab-case, unique within the design |
 | `description` | string | yes | one-line statement of the property |
-| `enforcement` | array<string> | yes | one or more of `bdd`, `codeql`, `linter`, `pre-commit`, `claude-hook`, `manual` |
+| `enforcement` | array<string> | yes | one or more of `bdd`, `semgrep`, `codeql`, `linter`, `pre-commit`, `claude-hook`, `manual` |
 | `bdd_tag` | string | when `bdd` ∈ enforcement | tag the BDD scenario must carry; defaults to `@<design-id>--<constraint-id>` |
+| `semgrep_rule` | string | when `semgrep` ∈ enforcement | path to the semgrep YAML rule; defaults to `design_docs/semgrep/<design-id>/<constraint-id>.yml` |
 | `codeql_query` | string | when `codeql` ∈ enforcement | path to the `.ql` file; defaults to `design_docs/codeql/<design-id>/<constraint-id>.ql` |
 | `linter_rule` | string | when `linter` ∈ enforcement | identifier of the linter rule (project-defined) |
 | `hook_id` | string | when `pre-commit` or `claude-hook` ∈ enforcement | identifier the hook config maps to a script |

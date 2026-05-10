@@ -62,28 +62,34 @@ Copy `templates/design_doc.md` to `design_docs/<id>.md`. Fill in:
 
 ### 4. Choose enforcement mechanisms thoughtfully
 
-For each constraint, pick `enforcement` values. The framework
-strongly prefers `codeql` for structural / cross-cutting properties.
-Use this rubric:
+For each constraint, pick `enforcement` values. Static enforcement
+forms a capability ladder — `linter` < `semgrep` < `codeql` — and
+the agent should reach for the cheapest tool that expresses the
+property. **Default to `semgrep`** for structural AST properties;
+reserve `codeql` for predicates that genuinely need dataflow or
+taint analysis.
 
 | Property shape | First-choice enforcement |
 |---|---|
-| "every X is wrapped in Y" / "every X flows through Y" | `codeql` (+ `bdd` for representative scenarios) |
-| "X never calls Y directly" / "no X without prior Y" | `codeql` |
-| "user-facing behavior on the happy path" | `bdd` |
-| "user-facing behavior on edge cases" | `bdd` |
+| "every X is decorated/wrapped with Y" / "every call to X passes Y" | `semgrep` (+ `bdd` for representative scenarios) |
+| "X never calls Y directly" / "no X uses pattern Z" | `semgrep` |
+| "user input never reaches Y without going through Z" | `codeql` (taint flow) |
+| "every secret read flows through `redact` before any log call" | `codeql` (dataflow) |
+| "user-facing behavior on happy path or edge cases" | `bdd` |
 | "filename/path/format constraint" | `linter` (regex is fine) |
 | "process / workflow constraint" (e.g. "every PR has a label") | `pre-commit` or `claude-hook` |
 | "no agent should edit file X without approval" | `claude-hook` |
 | "expensive cross-cutting check that is hard to automate" | `manual` (rare; document why) |
 
-If a constraint reasonably fits both `codeql` and `linter`, prefer
-`codeql`. Regex linters drift; structural queries hold as long as the
-structure holds.
+If a property is expressible in Semgrep, use Semgrep. The signal to
+reach for CodeQL is wanting Semgrep's `taint` mode for cross-procedural
+flow tracking — for the more common "every X passes/wraps/flows-through
+Y" properties, a Semgrep rule is simpler and sufficient.
 
-If a constraint fits both `codeql` and `bdd`, list both. CodeQL
-proves the static property; BDD proves the runtime behavior. They are
-complementary, not redundant.
+If a constraint fits both a static rule (`semgrep`/`codeql`) and `bdd`,
+list both. The static rule proves the structural invariant; the BDD
+scenario proves the runtime behavior. They are complementary, not
+redundant.
 
 ### 5. Sanity-check the draft
 
